@@ -1,0 +1,101 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - dev
+      - staging
+      - main # Prod
+
+env:
+  AWS_REGION: us-west-2
+  GCP_REGION: us-central1
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set Environment
+        id: set_env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "ENV_NAME=prod" >> $GITHUB_ENV
+          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            echo "ENV_NAME=staging" >> $GITHUB_ENV
+          else
+            echo "ENV_NAME=dev" >> $GITHUB_ENV
+          fi
+
+      # Mock Build and Push (In reality, log into ECR and Artifact Registry)
+      - name: Build Frontend Image
+        run: |
+          docker build -t frontend-${{ env.ENV_NAME }}:${{ github.sha }} ./frontend
+          # docker push ...
+
+      - name: Build Backend Image
+        run: |
+          docker build -t backend-${{ env.ENV_NAME }}:${{ github.sha }} ./backend
+          # docker push ...
+
+  deploy-aws:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Set Environment
+        id: set_env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "ENV_NAME=prod" >> $GITHUB_ENV
+          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            echo "ENV_NAME=staging" >> $GITHUB_ENV
+          else
+            echo "ENV_NAME=dev" >> $GITHUB_ENV
+          fi
+
+      - name: Terraform Init (AWS)
+        working-directory: ./terraform/aws
+        run: terraform init
+
+      - name: Terraform Apply (AWS)
+        working-directory: ./terraform/aws
+        # NOTE: Requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in GitHub Secrets
+        run: terraform apply -auto-approve -var="environment=${{ env.ENV_NAME }}"
+
+  deploy-gcp:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Set Environment
+        id: set_env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "ENV_NAME=prod" >> $GITHUB_ENV
+          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            echo "ENV_NAME=staging" >> $GITHUB_ENV
+          else
+            echo "ENV_NAME=dev" >> $GITHUB_ENV
+          fi
+
+      - name: Terraform Init (GCP)
+        working-directory: ./terraform/gcp
+        run: terraform init
+
+      - name: Terraform Apply (GCP)
+        working-directory: ./terraform/gcp
+        # NOTE: Requires GOOGLE_CREDENTIALS in GitHub Secrets
+        run: terraform apply -auto-approve -var="environment=${{ env.ENV_NAME }}"
